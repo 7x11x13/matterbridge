@@ -26,6 +26,8 @@ func (b *Bsoulseek) handleMessage(msg soulseekMessageResponse) {
 		b.handleJoinMessage(msg)
 	case userLeftRoomMessage:
 		b.handleLeaveMessage(msg)
+	case getPeerAddressMessageResponse:
+		b.handlePeerAddressResponse(msg)
 	default:
 		// do nothing
 	}
@@ -89,4 +91,9 @@ func (b *Bsoulseek) handleDM(msg privateMessageReceive) {
 			b.doDisconnect()
 		}
 	}
+}
+
+func (b *Bsoulseek) handlePeerAddressResponse(msg getPeerAddressMessageResponse) {
+	b.Log.Debugf("Received peer address response: %+v", msg)
+	b.peerAddressResponses <- msg
 }

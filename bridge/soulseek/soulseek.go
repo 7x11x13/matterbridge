@@ -1,8 +1,10 @@
 package bsoulseek
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/42wim/matterbridge/bridge"
@@ -13,6 +15,8 @@ type Bsoulseek struct {
 	conn                 net.Conn
 	messagesToSend       chan soulseekMessage
 	local                chan config.Message
+	peerAddressResponses  chan getPeerAddressMessageResponse
+	peerAddresses        map[string]uint32
 	loginResponse        chan soulseekMessageResponse
 	joinRoomResponse     chan joinRoomMessageResponse
 	fatalErrors          chan error
@@ -27,6 +31,8 @@ func New(cfg *bridge.Config) bridge.Bridger {
 	b.Config = cfg
 	b.messagesToSend = make(chan soulseekMessage, 256)
 	b.local = make(chan config.Message, 256)
+	b.peerAddressResponses = make(chan getPeerAddressMessageResponse)
+	b.peerAddresses = map[string]uint32{}
 	b.loginResponse = make(chan soulseekMessageResponse)
 	b.joinRoomResponse = make(chan joinRoomMessageResponse)
 	b.fatalErrors = make(chan error)
@@ -92,11 +98,33 @@ func (b *Bsoulseek) sendMessages() {
 	}
 }
 
-func (b *Bsoulseek) sendLocalToRemote() {
+func ipToString(n uint32) string {
+	ip := make(net.IP, 4)
+	binary.BigEndian.PutUint32(ip, n)
+	return ip.String()
+}
+
+func (b *Bsoulseek) processIncomingMessages() {
 	for {
 		message, more := <-b.local
 		if !more {
 			return
+		}
+		if b.IsKeySet("IgnoreIPs") {
+			ignore := b.GetStringSlice("IgnoreIPs")
+			ip, ok := b.peerAddresses[message.Username]
+			if !ok {
+				// get peer ip address
+				b.messagesToSend <- makeGetPeerAddressMessage(message.Username)
+				response := <- b.peerAddressResponses
+				b.peerAddresses[response.Username] = response.IP
+				ip = response.IP
+			}
+			ipString := ipToString(ip)
+			b.Log.Debugf("Username: %s, IP string: %s", message.Username, ipString)
+			if slices.Contains(ignore, ipString) {
+				continue
+			}
 		}
 		b.Remote <- message
 	}
@@ -128,7 +156,7 @@ func (b *Bsoulseek) loginLoop() {
 		// Init sender and receiver
 		go b.receiveMessages()
 		go b.sendMessages()
-		go b.sendLocalToRemote()
+		go b.processIncomingMessages()
 
 		// Attempt login
 		b.messagesToSend <- makeLoginMessage(b.GetString("Nick"), b.GetString("Password"))
@@ -226,6 +254,7 @@ func (b *Bsoulseek) doDisconnect() error {
 	close(b.joinRoomResponse)
 	close(b.loginResponse)
 	close(b.local)
+	close(b.peerAddressResponses)
 	return nil
 }
 

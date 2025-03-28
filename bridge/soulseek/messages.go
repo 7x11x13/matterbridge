@@ -16,6 +16,7 @@ type soulseekMessageResponse interface{}
 
 const (
 	loginMessageCode          uint32 = 1
+	getPeerAddressMessageCode uint32 = 3
 	sayInChatRoomMessageCode  uint32 = 13
 	joinRoomMessageCode       uint32 = 14
 	userJoinedRoomMessageCode uint32 = 16
@@ -66,6 +67,20 @@ type loginMessageResponseSuccess struct {
 
 type loginMessageResponseFailure struct {
 	Reason string
+}
+
+// 3: Get peer IP address
+type getPeerAddressMessage struct {
+	Code    uint32
+	Username string
+}
+
+type getPeerAddressMessageResponse struct {
+	Username string
+	IP uint32
+	Port uint32
+	Unknown uint32
+	ObfuscatedPort uint16
 }
 
 // 13: Say in chatroom
@@ -320,6 +335,8 @@ func (b* Bsoulseek) readMessage(reader io.Reader) (soulseekMessage, error) {
 		return unpackMessage[changePasswordMessageResponse](reader)
 	case privateMessageCode:
 		return unpackMessage[privateMessageReceive](reader)
+	case getPeerAddressMessageCode:
+		return unpackMessage[getPeerAddressMessageResponse](reader)
 	default:
 		_, ignore := ignoreMessageCodes[code]
 		if !ignore {
@@ -355,5 +372,12 @@ func makeSayChatroomMessage(room string, text string) sayChatroomMessage {
 		sayInChatRoomMessageCode,
 		room,
 		text,
+	}
+}
+
+func makeGetPeerAddressMessage(username string) getPeerAddressMessage {
+	return getPeerAddressMessage{
+		getPeerAddressMessageCode,
+		username,
 	}
 }
